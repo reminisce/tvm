@@ -131,3 +131,7 @@ set(USE_SORT OFF)
 
 # Build ANTLR parser for Relay text format
 set(USE_ANTLR OFF)
+
+# Whether use TensorRT
+# /path/to/tensorrt that contains include and lib dirs
+set(USE_TENSORRT OFF)

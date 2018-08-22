@@ -93,9 +93,12 @@ nnvm::Graph GraphCompile(const nnvm::Graph& g) {
 
   for (uint32_t nid = 0; nid < idx.num_nodes(); ++nid) {
     const auto& inode = idx[nid];
+
     if (inode.source->is_variable()) continue;
+    // TODO(junwu): use a better way to skip lowering subgraph ops
+    if (inode.source->op()->name == "_tensorrt_subgraph_op") continue;
     int root_id = group_vec[nid];
-        if (static_cast<int>(nid) != root_id) continue;
+    if (static_cast<int>(nid) != root_id) continue;
     int master = master_vec[root_id];
     FuseEntry& fe = fuse_entries[root_id];
 
@@ -138,34 +141,57 @@ nnvm::Graph GraphCompile(const nnvm::Graph& g) {
       old_new[nid] = np;
       continue;
     }
+
     int root_id = group_vec[nid];
     if (static_cast<int>(nid) != root_id) continue;
 
-    // Handle normal op
-    FuseEntry& fe = fuse_entries[root_id];
-    const IndexedGraph& subidx = fe.subgraph.indexed_graph();
     nnvm::NodePtr np = nnvm::Node::Create();
-    np->attrs.op = tvm_op;
-    np->attrs.name = inode.source->attrs.name;
-    TVMOpParam param;
-    param.func_name = fe.compiled_func->func_name;
-    param.num_inputs = static_cast<uint32_t>(fe.imap.size());
-    param.num_outputs = static_cast<uint32_t>(fe.subgraph.outputs.size());
-    param.flatten_data = fe.flatten_data;
-    param.UpdateDict(&(np->attrs.dict));
-    np->attrs.parsed = std::move(param);
+    // TODO(junwu): use a better way to skip lowering subgraph ops
+    if (inode.source->op()->name == "_tensorrt_subgraph_op") {
+      // create a copy of the current node for the new graph with fused operators
+      np->attrs.op = inode.source->op();
+      np->attrs.name = inode.source->attrs.name;
+      np->attrs.subgraphs = inode.source->attrs.subgraphs;
+      TVMOpParam param;
+      param.func_name = "_tensorrt_forward";
+      param.num_inputs = inode.source->op()->get_num_inputs(inode.source->attrs);
+      param.num_outputs = inode.source->op()->get_num_outputs(inode.source->attrs);
+      param.flatten_data = 0U;
+      param.UpdateDict(&(np->attrs.dict));
+      np->attrs.parsed = std::move(param);
+      for (auto& e : inode.source->inputs) {
+        const auto in_nid = idx.node_id(e.node.get());
+        auto it = old_new.find(in_nid);
+        CHECK(it != old_new.end()) << "cannot find node_id=" << in_nid;
+        np->inputs.emplace_back(nnvm::NodeEntry{it->second, e.index, e.version});
+      }
+    } else {
+      // Handle normal op
+      FuseEntry &fe = fuse_entries[root_id];
+      const IndexedGraph &subidx = fe.subgraph.indexed_graph();
+      // nnvm::NodePtr np = nnvm::Node::Create();
+      np->attrs.op = tvm_op;
+      np->attrs.name = inode.source->attrs.name;
+      TVMOpParam param;
+      param.func_name = fe.compiled_func->func_name;
+      param.num_inputs = static_cast<uint32_t>(fe.imap.size());
+      param.num_outputs = static_cast<uint32_t>(fe.subgraph.outputs.size());
+      param.flatten_data = fe.flatten_data;
+      param.UpdateDict(&(np->attrs.dict));
+      np->attrs.parsed = std::move(param);
 
-    for (uint32_t sub_input_id : subidx.input_nodes()) {
-      // Need to make sure subgraph input order is consistent to the order of
-      // the graph input.
-      auto rit = fe.reverse_imap.find(subidx[sub_input_id].source);
-      CHECK(rit != fe.reverse_imap.end());
-      const IndexedGraph::NodeEntry& e = rit->second;
-            auto it = old_new.find(e.node_id);
-      CHECK(it != old_new.end())
-          << "cannot find node_id=" << e.node_id;
-      np->inputs.emplace_back(
-          nnvm::NodeEntry{it->second, e.index, e.version});
+      for (uint32_t sub_input_id : subidx.input_nodes()) {
+        // Need to make sure subgraph input order is consistent to the order of
+        // the graph input.
+        auto rit = fe.reverse_imap.find(subidx[sub_input_id].source);
+        CHECK(rit != fe.reverse_imap.end());
+        const IndexedGraph::NodeEntry& e = rit->second;
+        auto it = old_new.find(e.node_id);
+        CHECK(it != old_new.end())
+            << "cannot find node_id=" << e.node_id;
+        np->inputs.emplace_back(
+            nnvm::NodeEntry{it->second, e.index, e.version});
+      }
     }
     for (const uint32_t node_id : inode.control_deps) {
       auto it = old_new.find(node_id);
@@ -239,8 +265,11 @@ nnvm::Graph GraphCompile(const nnvm::Graph& g) {
   ret.attrs["dltype"] = std::make_shared<any>(std::move(new_dltype_vec));
 
   // Setup module
-  static const PackedFunc& fbuild = GetPackedFunc("nnvm.compiler.build_target");
-  tvm::runtime::Module module = fbuild(func_list, target, target_host);
+  static const PackedFunc &fbuild = GetPackedFunc("nnvm.compiler.build_target");
+  tvm::runtime::Module module;
+  if (func_list.size() > 0U) {
+    module = fbuild(func_list, target, target_host);
+  }
   ret.attrs["module"] = std::make_shared<any>(std::move(module));
   ret = nnvm::ApplyPass(ret, "PlanMemory");
   ret = DecorateMemoryPlan(ret, assign_flag);

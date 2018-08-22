@@ -295,6 +295,11 @@ def _argmin(inputs, attrs):
     new_attrs['keepdims'] = _parse_bool_str(attrs, 'keepdims', default="False")
     return _get_nnvm_op(op_name)(*inputs, **new_attrs)
 
+
+def _copy(inputs, _):
+    return _get_nnvm_op('copy')(inputs[0], **{})
+
+
 _identity_list = ['__add_scalar__', '__add_symbol__', '__div_scalar__',
                   '__div_symbol__', '__mul_scalar__', '__mul_symbol__',
                   '__pow_scalar__', '__rdiv_scalar__', '__rpow_scalar__',
@@ -351,7 +356,9 @@ _convert_map = {
     'UpSampling'    : _upsampling,
     'clip'          : _clip,
     'expand_dims'   : _expand_dims,
-    'LRN'           : _lrn
+    'LRN'           : _lrn,
+    'LinearRegressionOutput' : _copy,
+    'argmax'                 : _argmax
 }
 
 def _convert_symbol(op_name, inputs, attrs,
