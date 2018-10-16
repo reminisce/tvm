@@ -4,7 +4,7 @@
  * \brief TensorRT executor manager. The manager is owned
  * by GraphRuntime if TensorRT is enabled in the build. The manager
  * owns TensorRT inference engines and contexts.
- * \file subgraph.h
+ * \file tensorrt_executor.h
  */
 #ifndef TVM_CONTRIB_SUBGRAPH_TENSORRT_EXECUTOR_H_
 #define TVM_CONTRIB_SUBGRAPH_TENSORRT_EXECUTOR_H_

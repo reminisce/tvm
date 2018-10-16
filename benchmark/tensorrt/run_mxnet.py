@@ -53,7 +53,7 @@ def get_data_shape(model_name):
 def get_mxnet_workload(network, **kwargs):
     block = get_model(network, **kwargs)
     block.hybridize()
-    block.forward(mx.nd.zeros(data_shape))
+    block.forward(mx.nd.zeros(get_data_shape(network)))
     block.export(network)
     return mx.model.load_checkpoint(network, 0)
 
@@ -112,6 +112,9 @@ if __name__ == '__main__':
         y_gen = executor.forward(is_train=False)
         y_gen[0].wait_to_read()
     elapse = (time.time() - start) * 1000.0 / repeat
+    import resource
+    print("peak memory usage (bytes on OS X, kilobytes on Linux) {}"
+          .format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
     print("MXNet w/ TensorRT runtime per forward: %sms" % elapse)
     print("MXNet w/ TensorRT throughput: %d images/s" % int(1000. / elapse))
 

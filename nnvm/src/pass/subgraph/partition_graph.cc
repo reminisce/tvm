@@ -17,14 +17,6 @@ NodePtr CreateVariableNode(const std::string& name);
 namespace pass {
 namespace {
 
-#if 0
-using nnvm::Symbol;
-using nnvm::Node;
-using nnvm::NodePtr;
-using nnvm::NodeEntry;
-using nnvm::Graph;
-#endif
-
 #define DEBUG_SUBGRAPH 0
 
 struct SimpleNode;

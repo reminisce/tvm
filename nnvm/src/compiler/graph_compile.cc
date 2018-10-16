@@ -95,7 +95,6 @@ nnvm::Graph GraphCompile(const nnvm::Graph& g) {
     const auto& inode = idx[nid];
 
     if (inode.source->is_variable()) continue;
-    // TODO(junwu): use a better way to skip lowering subgraph ops
     if (inode.source->op()->name == "_tensorrt_subgraph_op") continue;
     int root_id = group_vec[nid];
     if (static_cast<int>(nid) != root_id) continue;
@@ -146,7 +145,6 @@ nnvm::Graph GraphCompile(const nnvm::Graph& g) {
     if (static_cast<int>(nid) != root_id) continue;
 
     nnvm::NodePtr np = nnvm::Node::Create();
-    // TODO(junwu): use a better way to skip lowering subgraph ops
     if (inode.source->op()->name == "_tensorrt_subgraph_op") {
       // create a copy of the current node for the new graph with fused operators
       np->attrs.op = inode.source->op();

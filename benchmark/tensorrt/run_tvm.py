@@ -5,7 +5,6 @@ import nnvm
 import tvm
 from tvm.contrib import graph_runtime
 
-
 batch_size = 1
 
 models = ['resnet18_v1',
@@ -138,6 +137,9 @@ if __name__ == '__main__':
             module.run()
         total_elapse = time.time() - start
         avg_time = total_elapse / repeat * 1000.0
+        import resource
+        print("peak memory usage (bytes on OS X, kilobytes on Linux) {}"
+              .format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
         print("%s, ext_accel=%s, average time cost/forward: %fms" % (network, ext_accel, avg_time))
         print("%s, ext_accel=%s, throughput: %d images/s" % (network, ext_accel, int(1000.0/avg_time)))
         print(module.get_output(0).asnumpy()[:, 0:40])

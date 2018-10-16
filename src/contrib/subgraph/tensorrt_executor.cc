@@ -98,7 +98,7 @@ class TensorRTProfiler : public nvinfer1::IProfiler {
 TensorRTExecManager::TensorRTExecManager() {
   static TensorRTLogger trt_logger;
   infer_engine_builder_ = nvinfer1::createInferBuilder(trt_logger);
-  max_workspace_size_ = dmlc::GetEnv("TVM_TENSORRT_MAX_WORKSPACE_SIZE", 1 << 30);
+  max_workspace_size_ = dmlc::GetEnv("TVM_TENSORRT_MAX_WORKSPACE_SIZE", 1 << 29);
   use_profiler_ = dmlc::GetEnv("TVM_TENSORRT_USE_PROFILER", false);
 }
 
@@ -108,7 +108,9 @@ TensorRTExecManager::~TensorRTExecManager() {
     kv.second->destroy();  // destroy context
     kv.first->destroy();  // destroy engine
   }
-  infer_engine_builder_->destroy();
+  if (infer_engine_builder_ != nullptr) {
+    infer_engine_builder_->destroy();
+  }
 }
 
 // data_entries contains inputs and outputs of the subgraph in topo-sorted order
@@ -137,6 +139,9 @@ std::function<void()> TensorRTExecManager::CreateExec(const std::string& subgrap
       this->input_data_idx_map_.emplace(engine, input_data_idx);
       this->input_data_name_map_.emplace(engine, input_data_names);
       this->output_name_map_.emplace(engine, output_names);
+    } else if (infer_engine_builder_ != nullptr) {
+      infer_engine_builder_->destroy();
+      infer_engine_builder_ = nullptr;
     }
     nvinfer1::ICudaEngine* engine = this->infer_engine_map_.at(subgraph_name);
     nvinfer1::IExecutionContext* context = this->infer_engine_context_map_.at(engine);
@@ -398,7 +403,7 @@ void AddBatchNorm(
   float* shift_ptr = reinterpret_cast<float*>(weight_shift_ptr);
   // TODO(junwu): consider parallelizing the following loop
   for (int i = 0; i < gamma.count; ++i) {
-    scale_ptr[i] = 1.0 / sqrt(var_ptr[i] + epsilon);
+    scale_ptr[i] = 1.0 / std::sqrt(var_ptr[i] + epsilon);
     if (scale) {
       scale_ptr[i] *= gamma_ptr[i];
     }
@@ -601,7 +606,7 @@ void AddSoftmax(
   nvinfer1::ITensor* data = GetTensorRTTensor(
       nodes[nid].node_name, nodes, nodes[nid].inputs[0], data_entries,
       input_nid2idx, *nid2layer, network, nid2tensor, input_data_idx, input_data_names);
-  CHECK(!nodes[nid].attrs.count("axis"));
+  // CHECK(!nodes[nid].attrs.count("axis"));
   nvinfer1::Dims data_dims = data->getDimensions();
   nvinfer1::ISoftMaxLayer* softmax_layer = network->addSoftMax(*data);
   CHECK(softmax_layer != nullptr);

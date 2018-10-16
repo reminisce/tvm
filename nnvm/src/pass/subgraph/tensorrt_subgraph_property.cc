@@ -51,10 +51,6 @@ bool IsTensorRTCompatibleOp(const std::unordered_set<std::string>& op_names,
     if (std::stoi(axes_str.substr(pos+1)) != 3) {
       return false;
     }
-  } else if (op_name == "softmax") {
-    if (params.count("axis")) {
-      return false;
-    }
   }
   return true;
 }
