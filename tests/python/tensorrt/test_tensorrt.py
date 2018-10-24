@@ -12,7 +12,7 @@ import tvm
 from tvm.contrib import graph_runtime
 
 
-def test_tensorrt_module():
+def test_tensorrt_image_classification_models():
     def compile_model(graph, params, data_shapes, subgraph_backend=None, op_names=None, **kwargs):
         _, output_shapes = nnvm.compiler.graph_util.infer_shape(graph, **data_shapes)
         assert len(output_shapes) == 1
@@ -83,4 +83,4 @@ def test_tensorrt_module():
 
 
 if __name__ == '__main__':
-    test_tensorrt_module()
+    test_tensorrt_image_classification_models()

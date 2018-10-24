@@ -717,18 +717,26 @@ void AddSliceLike(
         input_nid2idx, *nid2layer, network, nid2tensor, input_data_idx, input_data_names);
   }
   CHECK_EQ(nodes[nid].attrs.count("axis"), 1U);
+  CHECK_EQ(nodes[nid].attrs.count("offset"), 1U);
   std::vector<std::string> axes = Tokenize2DShape(nodes[nid].attrs.at("axis"));
   CHECK_EQ(std::stoi(axes[0]), 2);
   CHECK_EQ(std::stoi(axes[1]), 3);
+  std::vector<std::string> offsets = Tokenize2DShape(nodes[nid].attrs.at("offset"));
+  CHECK_EQ(offsets.size(), 2U);
   nvinfer1::Dims src_shape = input_tensors[0]->getDimensions();
   nvinfer1::Dims target_shape = input_tensors[1]->getDimensions();
   CHECK_EQ(src_shape.nbDims, 4);
   CHECK_EQ(target_shape.nbDims, 4);
   CHECK_GE(src_shape.d[2], target_shape.d[2]);
   CHECK_GE(src_shape.d[3], target_shape.d[3]);
-  nvinfer1::DimsHW pre_padding(0, 0);
+  nvinfer1::DimsHW pre_padding(-std::stoi(offsets[0]), -std::stoi(offsets[1]));
+  CHECK_LE(pre_padding.d[0], 0);
+  CHECK_LE(pre_padding.d[1], 0);
   nvinfer1::DimsHW post_padding(
-      target_shape.d[2]-src_shape.d[2], target_shape.d[3]-src_shape.d[3]);
+      target_shape.d[2]-pre_padding.d[0]-src_shape.d[2],
+      target_shape.d[3]-pre_padding.d[1]-src_shape.d[3]);
+  CHECK_LE(post_padding.d[0], 0);
+  CHECK_LE(post_padding.d[1], 0);
   nvinfer1::IPaddingLayer* padding_layer =
       network->addPadding(*input_tensors[0], pre_padding, post_padding);
   CHECK(padding_layer != nullptr);
