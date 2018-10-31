@@ -1097,6 +1097,9 @@ class GraphProto(object):
                     "Please freeze the graph with add_shapes=True")
 
             if node.op == "Placeholder":
+                if self._output_shapes[node.name][0][0] == -1:
+                    print("Node %s shape is %s, reset batch size to 1" % (node.name, self._output_shapes[node.name][0]))
+                    self._output_shapes[node.name][0][0] = 1
                 self._nodes[node.name] = _sym.Variable(name=node.name,
                                                        shape=self._output_shapes[node.name][0])
 
