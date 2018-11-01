@@ -168,7 +168,8 @@ std::function<void()> TensorRTExecManager::CreateExec(const std::string& subgrap
     if (use_profiler_) {
       context->setProfiler(&profiler);
     }
-    context->execute(batch_size, bindings);
+    CHECK(context->execute(batch_size, bindings)) << "Running TensorRT for subgraph "
+      << subgraph_name << " failed.";
     if (use_profiler_) {
       profiler.PrintSummary();
     }
