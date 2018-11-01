@@ -61,60 +61,66 @@ def get_mxnet_workload(network, **kwargs):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmark MXNet')
     parser.add_argument('--network', type=str, required=True, choices=models)
+    parser.add_argument('--ext-accel', type=str, default='none', choices=['none', 'tensorrt'])
     args = parser.parse_args()
 
     network = args.network
     num_classes = 1000
     sym, arg_params, aux_params = get_mxnet_workload(network, pretrained=True)
     data_shape = get_data_shape(network)
+    data = np.random.uniform(size=data_shape).astype("float32")
+    data = mx.nd.array(data)
+    repeat = 100
 
     # Execute with MXNet
-    os.environ['MXNET_USE_TENSORRT'] = '0'
-    executor = sym.simple_bind(ctx=mx.gpu(0), data=data_shape, grad_req='null', force_rebind=True)
-    executor.copy_params_from(arg_params, aux_params)
+    if args.ext_accel == 'none':
+        os.environ['MXNET_USE_TENSORRT'] = '0'
+        executor = sym.simple_bind(ctx=mx.gpu(0), data=data_shape, grad_req='null', force_rebind=True)
+        executor.copy_params_from(arg_params, aux_params)
 
-    input = np.random.uniform(size=data_shape).astype("float32")
-    # Warmup
-    repeat = 100
-    print('=============Warming up MXNet...')
-    for i in range(repeat):
-        y_gen = executor.forward(is_train=False, data=input)
-        y_gen[0].wait_to_read()
+        # Warmup
+        print('=============Warming up MXNet...')
+        for i in range(repeat):
+            y_gen = executor.forward(is_train=False, data=data)
+            y_gen[0].wait_to_read()
 
-    # Timing
-    print('=============Starting MXNet timed run...')
-    start = time.time()
-    for i in range(0, repeat):
-        y_gen = executor.forward(is_train=False)
-        y_gen[0].wait_to_read()
-    end = time.time()
-    elapse = (time.time() - start) * 1000.0 / repeat
-    print("MXNet w/o TensorRT runtime per forward: %sms" % elapse)
-    print("MXNet w/o TensorRT throughput: %d images/s" % int(1000. / elapse))
+        # Timing
+        print('=============Starting MXNet timed run...')
+        repeat = 1000
+        start = time.time()
+        for i in range(0, repeat):
+            y_gen = executor.forward(is_train=False, data=data)
+            y_gen[0].wait_to_read()
+        end = time.time()
+        elapse = (time.time() - start) * 1000.0 / repeat
+        print("MXNet w/o TensorRT runtime per forward: %.3fms" % elapse)
+    elif args.ext_accel == 'tensorrt':
+        # Execute with TensorRT
+        print('=============Building TensorRT engine...')
+        os.environ['MXNET_USE_TENSORRT'] = '1'
+        arg_params.update(aux_params)
+        all_params = dict([(k, v.as_in_context(mx.gpu(0))) for k, v in arg_params.items()])
+        executor = mx.contrib.tensorrt.tensorrt_bind(sym, ctx=mx.gpu(0), all_params=all_params,
+                                                     data=data_shape, grad_req='null', force_rebind=True)
+        # Warmup
+        print('=============Warming up TensorRT')
+        for i in range(repeat):
+            y_gen = executor.forward(is_train=False, data=data)
+            y_gen[0].wait_to_read()
 
-    # Execute with TensorRT
-    print('=============Building TensorRT engine...')
-    os.environ['MXNET_USE_TENSORRT'] = '1'
-    arg_params.update(aux_params)
-    all_params = dict([(k, v.as_in_context(mx.gpu(0))) for k, v in arg_params.items()])
-    executor = mx.contrib.tensorrt.tensorrt_bind(sym, ctx=mx.gpu(0), all_params=all_params,
-                                                 data=data_shape, grad_req='null', force_rebind=True)
-    # Warmup
-    print('=============Warming up TensorRT')
-    for i in range(repeat):
-        y_gen = executor.forward(is_train=False, data=input)
-        y_gen[0].wait_to_read()
+        # Timing
+        print('============Starting TensorRT timed run')
+        repeat = 1000
+        start = time.time()
+        for i in range(0, repeat):
+            y_gen = executor.forward(is_train=False, data=data)
+            y_gen[0].wait_to_read()
+        elapse = (time.time() - start) * 1000.0 / repeat
+        print("MXNet w/ TensorRT runtime per forward: %.3fms" % elapse)
+    else:
+        raise ValueError('Unknown ext_accel = %s' % args.ext_accel)
 
-    # Timing
-    print('============Starting TensorRT timed run')
-    start = time.time()
-    for i in range(0, repeat):
-        y_gen = executor.forward(is_train=False)
-        y_gen[0].wait_to_read()
-    elapse = (time.time() - start) * 1000.0 / repeat
     import resource
     print("peak memory usage (bytes on OS X, kilobytes on Linux) {}"
           .format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
-    print("MXNet w/ TensorRT runtime per forward: %sms" % elapse)
-    print("MXNet w/ TensorRT throughput: %d images/s" % int(1000. / elapse))
 

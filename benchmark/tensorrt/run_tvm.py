@@ -113,6 +113,7 @@ if __name__ == '__main__':
         ctx = tvm.gpu()
         np.random.seed(3342902)
         data = np.random.uniform(-1, 1, size=data_shape).astype("float32")
+        data = tvm.nd.array(data)
         # create module
         module = graph_runtime.create(loaded_json, loaded_lib, ctx)
         module.load_params(loaded_params)
@@ -126,20 +127,16 @@ if __name__ == '__main__':
         print("===========Building TensorRT inference engine took %.3f seconds" % e)
         print("===========Warming up inference engine...")
         for i in range(repeat):
-            s = time.time()
-            module.run()
-            e = time.time() - s
-            print("%s forward %d costs %fms" % (network, i, (e * 1000.0)))
+            module.run(data=data)
 
         print("===========Starting to time inference...")
+        repeat = 1000
         start = time.time()
         for i in range(repeat):
-            module.run()
+            module.run(data=data)
         total_elapse = time.time() - start
         avg_time = total_elapse / repeat * 1000.0
         import resource
         print("peak memory usage (bytes on OS X, kilobytes on Linux) {}"
               .format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
-        print("%s, ext_accel=%s, average time cost/forward: %fms" % (network, ext_accel, avg_time))
-        print("%s, ext_accel=%s, throughput: %d images/s" % (network, ext_accel, int(1000.0/avg_time)))
-        print(module.get_output(0).asnumpy()[:, 0:40])
+        print("%s, ext_accel=%s, average time cost/forward: %.3fms" % (network, ext_accel, avg_time))
