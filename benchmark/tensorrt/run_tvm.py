@@ -66,6 +66,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmark TVM')
     parser.add_argument('--ext-accel', type=str, default='none', choices=['none', 'tensorrt'])
     parser.add_argument('--network', type=str, required=True, choices=models)
+    parser.add_argument('--cuda-arch', type=str, required=True, choices=['sm_37', 'sm_70', 'sm_53', 'sm_62'])
     parser.add_argument('--compile', dest='compile', action='store_true')
     parser.add_argument('--run', dest='run', action='store_true')
     parser.set_defaults(compile=False)
@@ -76,6 +77,7 @@ if __name__ == '__main__':
     num_classes = 1000
     data_shape = get_data_shape(network)
     ext_accel = None if args.ext_accel == 'none' else args.ext_accel
+    cuda_arch = args.cuda_arch
 
     if args.compile:
         net, params = get_tvm_workload(network, pretrained=True)
@@ -93,16 +95,16 @@ if __name__ == '__main__':
         print("===========Compiling model %s took %.3fs" % (network, time.time() - start))
 
         print("===========Saving lowered graph for model %s" % network)
-        with open('%s_ext_accel_%s.json' % (network, ext_accel), "w") as fo:
+        with open('%s_ext_accel_%s_%s.json' % (network, ext_accel, cuda_arch), "w") as fo:
             fo.write(graph.json())
         print("===========Saving module for model %s" % network)
         if lib.is_empty():
             print("lib is empty")
         else:
             print("lib is not empty")
-        lib.export_library('%s_ext_accel_%s.tar' % (network, ext_accel))
+        lib.export_library('%s_ext_accel_%s_%s.tar' % (network, ext_accel, cuda_arch))
         print("===========Saving params for model %s" % network)
-        with open('%s_ext_accel_%s.params' % (network, ext_accel), 'wb') as fo:
+        with open('%s_ext_accel_%s_%s.params' % (network, ext_accel, cuda_arch), 'wb') as fo:
             fo.write(nnvm.compiler.save_param_dict(params))
 
     if args.run:
