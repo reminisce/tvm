@@ -249,17 +249,19 @@ nvinfer1::ITensor* GetTensorRTTensor(
       CHECK(tensor.ndim >= 2 && tensor.ndim <= 4) << "Unsupported tensor ndim = " << tensor.ndim
                                                   << " for node " << node_name;
       nvinfer1::Dims dims;
+      // Note: The batch size is set to 1 for building the network.
+      // The real batch size is set through execute or enqueue functions.
       if (tensor.ndim == 2) {
-        dims = nvinfer1::Dims2(tensor.shape[0], tensor.shape[1]);
+        dims = nvinfer1::Dims2(1, tensor.shape[1]);
         dims.type[0] = nvinfer1::DimensionType::kINDEX;
         dims.type[1] = nvinfer1::DimensionType::kSPATIAL;
       } else if (tensor.ndim == 3) {
-        dims = nvinfer1::Dims3(tensor.shape[0], tensor.shape[1], tensor.shape[2]);
+        dims = nvinfer1::Dims3(1, tensor.shape[1], tensor.shape[2]);
         dims.type[0] = nvinfer1::DimensionType::kINDEX;
         dims.type[1] = nvinfer1::DimensionType::kCHANNEL;
         dims.type[2] = nvinfer1::DimensionType::kSPATIAL;
       } else if (tensor.ndim == 4) {
-        dims = nvinfer1::DimsNCHW(tensor.shape[0], tensor.shape[1],
+        dims = nvinfer1::DimsNCHW(1, tensor.shape[1],
                                   tensor.shape[2], tensor.shape[3]);
       }
       input_data_names->push_back(nodes[input_data_entry.node_id].node_name);

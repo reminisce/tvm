@@ -109,9 +109,9 @@ if __name__ == '__main__':
 
     if args.run:
         print("===========Starting to load model %s" % network)
-        loaded_json = open('%s_ext_accel_%s.json' % (network, ext_accel)).read()
-        loaded_lib = tvm.module.load('%s_ext_accel_%s.tar' % (network, ext_accel))
-        loaded_params = bytearray(open('%s_ext_accel_%s.params' % (network, ext_accel), 'rb').read())
+        loaded_json = open('%s_ext_accel_%s_%s.json' % (network, ext_accel, cuda_arch)).read()
+        loaded_lib = tvm.module.load('%s_ext_accel_%s_%s.tar' % (network, ext_accel, cuda_arch))
+        loaded_params = bytearray(open('%s_ext_accel_%s_%s.params' % (network, ext_accel, cuda_arch), 'rb').read())
         ctx = tvm.gpu()
         np.random.seed(3342902)
         data = np.random.uniform(-1, 1, size=data_shape).astype("float32")
