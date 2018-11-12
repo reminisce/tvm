@@ -99,6 +99,7 @@ TensorRTExecManager::TensorRTExecManager() {
   static TensorRTLogger trt_logger;
   infer_engine_builder_ = nvinfer1::createInferBuilder(trt_logger);
   max_workspace_size_ = dmlc::GetEnv("TVM_TENSORRT_MAX_WORKSPACE_SIZE", 1 << 29);
+  use_fp16_ = dmlc::GetEnv("TVM_TENSORRT_USE_FP16", false);
   use_profiler_ = dmlc::GetEnv("TVM_TENSORRT_USE_PROFILER", false);
 }
 
@@ -836,6 +837,7 @@ nvinfer1::ICudaEngine* TensorRTExecManager::CreateInferEngine(
   // build engine
   infer_engine_builder_->setMaxBatchSize(batch_size);
   infer_engine_builder_->setMaxWorkspaceSize(max_workspace_size_);
+  infer_engine_builder_->setFp16Mode(use_fp16_);
   nvinfer1::ICudaEngine* engine = infer_engine_builder_->buildCudaEngine(*network);
   CHECK(engine != nullptr);
 
