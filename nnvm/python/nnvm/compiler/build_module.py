@@ -176,6 +176,9 @@ def optimize(graph, shape, dtype="float32", layout=None):
         graph = graph_attr.set_layout_inputs(graph, layout)
         graph = graph.apply(["CorrectLayout"])
 
+    if tvm.target.current_target().target_name == 'cuda' and cfg.ext_accel is not None:
+        graph = _subgraph._partition(graph, cfg.ext_accel)
+
     if cfg.pass_enabled("SimplifyInference"):
         graph = graph_attr.set_shape_inputs(graph, shape)
         graph = graph.apply(["InferShape", "SimplifyInference"])
@@ -261,11 +264,6 @@ def build(graph, target=None, shape=None, dtype="float32",
 
         cfg = BuildConfig.current
         graph = graph if isinstance(graph, _graph.Graph) else _graph.create(graph)
-        if cfg.ext_accel is not None:
-            if cfg.ext_accel != 'tensorrt':
-                raise ValueError("only supports tensorrt as an external accelerator, while"
-                                 " received %s" % cfg.ext_accel)
-            graph = _subgraph._partition(graph, cfg.ext_accel)
         shape, dtype = _update_shape_dtype(shape, dtype, params)
 
         # correct layout if necessary

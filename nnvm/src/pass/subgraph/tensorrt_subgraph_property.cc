@@ -21,13 +21,25 @@ bool IsTensorRTCompatibleOp(const std::unordered_set<std::string>& op_names,
   }
   const std::string& op_name = node.op()->name;
   const auto& params = node.attrs.dict;
-  if (op_name == "max_pool2d" || op_name == "avg_pool2d") {
+  if (op_name == "conv2d" || op_name == "conv2d_transpose") {
+    if ((params.count("layout") && params.at("layout") != "NCHW")
+        || (params.count("kernel_layout") && params.at("kernel_layout") != "OIHW")
+        || (params.count("out_layout") && params.at("out_layout") != "__undef__"
+            && params.at("out_layout") != "NCHW")) {
+      return false;
+    }
+  } else if (op_name == "max_pool2d" || op_name == "avg_pool2d"
+             || op_name == "global_avg_pool2d" || op_name == "global_max_pool2d") {
     // only support floor mode
     if (params.count("layout") && params.at("layout") != "NCHW") {
       return false;
     }
     if (params.count("ceil_mode") &&
       (params.at("ceil_mode") == "True" || params.at("ceil_mode") == "1")) {
+      return false;
+    }
+  } else if (op_name == "batch_norm") {
+    if (params.count("axis") && params.at("axis") != "1") {
       return false;
     }
   } else if (op_name == "slice_like") {
