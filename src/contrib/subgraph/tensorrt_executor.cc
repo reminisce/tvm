@@ -10,6 +10,8 @@
 #include <dmlc/timer.h>
 #include <unordered_set>
 #include <functional>
+#include <iostream>
+#include <sstream>
 #include "./subgraph.h"
 #include "./tensorrt_executor.h"
 #include "../../runtime/cuda/cuda_common.h"
@@ -289,14 +291,18 @@ nvinfer1::ITensor* GetTensorRTTensor(
   return data;
 }
 
-std::vector<std::string> Tokenize2DShape(const std::string& tuple) {
-  CHECK_GE(tuple.size(), 5U);  // shortest tuple is like (1,2)
+std::vector<std::string> TokenizeTuple(const std::string& tuple) {
   CHECK(tuple.front() == '(' || tuple.front() == '[');
   CHECK(tuple.back() == ')' || tuple.back() == ']');
-  const std::string data = tuple.substr(1, tuple.size() - 2U);
-  const size_t found = data.find(',');
-  CHECK_NE(found, std::string::npos);
-  return {data.substr(0, found), data.substr(found+1)};
+  std::stringstream ss(tuple.substr(1, tuple.size() - 2U));
+  std::vector<std::string> ret;
+  while (ss.good()) {
+    std::string substr;
+    std::getline(ss, substr, ',');
+    ret.push_back(substr);
+  }
+  CHECK(!ret.empty()) << "Tuple " << tuple << " contains no data";
+  return ret;
 }
 
 void AddConvolution(
@@ -330,7 +336,8 @@ void AddConvolution(
           || nodes[nid].attrs.at("use_bias") == "0"));
   }
   CHECK(!nodes[nid].attrs.count("layout") || nodes[nid].attrs.at("layout") == "NCHW");
-  std::vector<std::string> tokens = Tokenize2DShape(nodes[nid].attrs.at("kernel_size"));
+  std::vector<std::string> tokens = TokenizeTuple(nodes[nid].attrs.at("kernel_size"));
+  CHECK_EQ(tokens.size(), 2U);
   nvinfer1::IConvolutionLayer* conv_layer = network->addConvolution(
       *data, std::stoi(nodes[nid].attrs.at("channels")),
       nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])),
@@ -338,11 +345,13 @@ void AddConvolution(
   CHECK(conv_layer != nullptr);
   conv_layer->setName(nodes[nid].node_name.c_str());
   if (nodes[nid].attrs.count("padding")) {
-    tokens = Tokenize2DShape(nodes[nid].attrs.at("padding"));
+    tokens = TokenizeTuple(nodes[nid].attrs.at("padding"));
+    CHECK_EQ(tokens.size(), 2U);
     conv_layer->setPadding(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
   }
   if (nodes[nid].attrs.count("strides")) {
-    tokens = Tokenize2DShape(nodes[nid].attrs.at("strides"));
+    tokens = TokenizeTuple(nodes[nid].attrs.at("strides"));
+    CHECK_EQ(tokens.size(), 2U);
     conv_layer->setStride(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
   }
   if (nodes[nid].attrs.count("groups")) {
@@ -524,18 +533,30 @@ void AddPooling(
     pool_layer = network->addPooling(
         *data, it->second, nvinfer1::DimsHW(data_shape[2], data_shape[3]));
   } else {
-    tokens = Tokenize2DShape(nodes[nid].attrs.at("pool_size"));
+    tokens = TokenizeTuple(nodes[nid].attrs.at("pool_size"));
+    CHECK_EQ(tokens.size(), 2U);
     pool_layer = network->addPooling(
         *data, it->second, nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
   }
   CHECK(pool_layer != nullptr);
   pool_layer->setName(nodes[nid].node_name.c_str());
   if (nodes[nid].attrs.count("padding")) {
-    tokens = Tokenize2DShape(nodes[nid].attrs.at("padding"));
-    pool_layer->setPadding(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
+    tokens = TokenizeTuple(nodes[nid].attrs.at("padding"));
+    if (tokens.size() == 1U) {
+      pool_layer->setPadding(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[0])));
+    } else if (tokens.size() == 2U) {
+      pool_layer->setPadding(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
+    } else if (tokens.size() == 4U) {
+      CHECK_EQ(tokens[0], tokens[2]);
+      CHECK_EQ(tokens[1], tokens[3]);
+      pool_layer->setPadding(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
+    } else {
+      LOG(FATAL) << "Unsupported padding in TensorRT " << nodes[nid].attrs.at("padding");
+    }
   }
   if (nodes[nid].attrs.count("strides")) {
-    tokens = Tokenize2DShape(nodes[nid].attrs.at("strides"));
+    tokens = TokenizeTuple(nodes[nid].attrs.at("strides"));
+    CHECK_EQ(tokens.size(), 2U);
     pool_layer->setStride(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
   }
   if (!is_global_pool && (nodes[nid].attrs.count("ceil_mode")
@@ -681,7 +702,7 @@ void AddDeconvolution(
     CHECK(nodes[nid].attrs.count("use_bias") && nodes[nid].attrs.at("use_bias") == "False");
   }
   CHECK(!nodes[nid].attrs.count("layout") || nodes[nid].attrs.at("layout") == "NCHW");
-  std::vector<std::string> tokens = Tokenize2DShape(nodes[nid].attrs.at("kernel_size"));
+  std::vector<std::string> tokens = TokenizeTuple(nodes[nid].attrs.at("kernel_size"));
   nvinfer1::IDeconvolutionLayer* deconv_layer = network->addDeconvolution(
       *data, std::stoi(nodes[nid].attrs.at("channels")),
       nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])),
@@ -689,11 +710,11 @@ void AddDeconvolution(
   CHECK(deconv_layer != nullptr);
   deconv_layer->setName(nodes[nid].node_name.c_str());
   if (nodes[nid].attrs.count("padding")) {
-    tokens = Tokenize2DShape(nodes[nid].attrs.at("padding"));
+    tokens = TokenizeTuple(nodes[nid].attrs.at("padding"));
     deconv_layer->setPadding(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
   }
   if (nodes[nid].attrs.count("strides")) {
-    tokens = Tokenize2DShape(nodes[nid].attrs.at("strides"));
+    tokens = TokenizeTuple(nodes[nid].attrs.at("strides"));
     deconv_layer->setStride(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
   }
   if (nodes[nid].attrs.count("groups")) {
@@ -725,10 +746,10 @@ void AddSliceLike(
   }
   CHECK_EQ(nodes[nid].attrs.count("axis"), 1U);
   CHECK_EQ(nodes[nid].attrs.count("offset"), 1U);
-  std::vector<std::string> axes = Tokenize2DShape(nodes[nid].attrs.at("axis"));
+  std::vector<std::string> axes = TokenizeTuple(nodes[nid].attrs.at("axis"));
   CHECK_EQ(std::stoi(axes[0]), 2);
   CHECK_EQ(std::stoi(axes[1]), 3);
-  std::vector<std::string> offsets = Tokenize2DShape(nodes[nid].attrs.at("offset"));
+  std::vector<std::string> offsets = TokenizeTuple(nodes[nid].attrs.at("offset"));
   CHECK_EQ(offsets.size(), 2U);
   nvinfer1::Dims src_shape = input_tensors[0]->getDimensions();
   nvinfer1::Dims target_shape = input_tensors[1]->getDimensions();
