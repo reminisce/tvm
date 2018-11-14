@@ -290,13 +290,13 @@ nvinfer1::ITensor* GetTensorRTTensor(
 }
 
 std::vector<std::string> Tokenize2DShape(const std::string& tuple) {
-  CHECK_GT(tuple.size(), 5U);  // shortest tuple is like (1, 2)
+  CHECK_GE(tuple.size(), 5U);  // shortest tuple is like (1,2)
   CHECK(tuple.front() == '(' || tuple.front() == '[');
   CHECK(tuple.back() == ')' || tuple.back() == ']');
   const std::string data = tuple.substr(1, tuple.size() - 2U);
   const size_t found = data.find(',');
   CHECK_NE(found, std::string::npos);
-  return {data.substr(0, found), data.substr(found+2)};
+  return {data.substr(0, found), data.substr(found+1)};
 }
 
 void AddConvolution(
@@ -321,11 +321,13 @@ void AddConvolution(
       nodes[nid].inputs[1].node_id, data_entries, input_nid2idx, nid2weights);
   nvinfer1::Weights bias{nvinfer1::DataType::kFLOAT, nullptr, 0};
   if (nodes[nid].inputs.size() == 3U) {
-    CHECK(!nodes[nid].attrs.count("use_bias") || nodes[nid].attrs.at("use_bias") == "True");
+    CHECK(!nodes[nid].attrs.count("use_bias") || nodes[nid].attrs.at("use_bias") == "True"
+          || nodes[nid].attrs.at("use_bias") == "1");
     bias = GetTensorRTWeights(
         nodes[nid].inputs[2].node_id, data_entries, input_nid2idx, nid2weights);
   } else {
-    CHECK(nodes[nid].attrs.count("use_bias") && nodes[nid].attrs.at("use_bias") == "False");
+    CHECK(nodes[nid].attrs.count("use_bias") && (nodes[nid].attrs.at("use_bias") == "False"
+          || nodes[nid].attrs.at("use_bias") == "0"));
   }
   CHECK(!nodes[nid].attrs.count("layout") || nodes[nid].attrs.at("layout") == "NCHW");
   std::vector<std::string> tokens = Tokenize2DShape(nodes[nid].attrs.at("kernel_size"));
@@ -566,7 +568,8 @@ void AddFullyConnected(
   nvinfer1::Weights weight = GetTensorRTWeights(
       nodes[nid].inputs[1].node_id, data_entries, input_nid2idx, nid2weights);
   nvinfer1::Weights bias{nvinfer1::DataType::kFLOAT, nullptr, 0};
-  if (!nodes[nid].attrs.count("use_bias") || nodes[nid].attrs.at("use_bias") == "True") {
+  if (!nodes[nid].attrs.count("use_bias") || nodes[nid].attrs.at("use_bias") == "True"
+      || nodes[nid].attrs.at("use_bias") == "1") {
     CHECK_EQ(nodes[nid].inputs.size(), 3U);
     bias = GetTensorRTWeights(
         nodes[nid].inputs[2].node_id, data_entries, input_nid2idx, nid2weights);
