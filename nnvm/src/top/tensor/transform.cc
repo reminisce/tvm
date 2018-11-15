@@ -1201,7 +1201,7 @@ inline bool SliceLikeShape(const nnvm::NodeAttrs& attrs,
     for (uint32_t i = 0; i < param.axis.ndim(); ++i) {
       int axis = param.axis[i];
       if (axis < 0) {
-        axis = src_shape.ndim() + i;
+        axis += static_cast<int>(src_shape.ndim());
       }
       CHECK_LT(axis, target_shape.ndim())
         << "Axis " << axis << " exceeds dimension "
