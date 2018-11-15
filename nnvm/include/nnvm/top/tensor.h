@@ -297,7 +297,9 @@ struct SliceLikeParam : public dmlc::Parameter<SliceLikeParam> {
                 "corresponding size of the second input. By default will slice "
                 "on all axes. Negative axes are supported.");
     DMLC_DECLARE_FIELD(offset).set_default(Tuple<int>())
-      .describe("Offset coordinates for cropping.");
+      .describe("Offset coordinates for cropping. If axis is empty, offset will be ignored."
+                "If axis is not empty, offset must be either empty or have the same length"
+                " as axis.");
   }
 };
 
