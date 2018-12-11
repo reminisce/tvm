@@ -344,6 +344,11 @@ void AddConvolution(
       weight, bias);
   CHECK(conv_layer != nullptr);
   conv_layer->setName(nodes[nid].node_name.c_str());
+  if (nodes[nid].attrs.count("dilation")) {
+    tokens = TokenizeTuple(nodes[nid].attrs.at("dilation"));
+    CHECK_EQ(tokens.size(), 2U);
+    conv_layer->setDilation(nvinfer1::DimsHW(std::stoi(tokens[0]), std::stoi(tokens[1])));
+  }
   if (nodes[nid].attrs.count("padding")) {
     tokens = TokenizeTuple(nodes[nid].attrs.at("padding"));
     CHECK_EQ(tokens.size(), 2U);
@@ -772,6 +777,104 @@ void AddSliceLike(
   nid2layer->emplace(nid, padding_layer);
 }
 
+void AddFlatten(
+    const uint32_t nid,
+    const std::vector<Subgraph::Node>& nodes,
+    const std::unordered_map<uint32_t, size_t>& input_nid2idx,
+    const std::vector<DLTensor>& data_entries,
+    nvinfer1::INetworkDefinition* network,
+    std::unordered_map<uint32_t, nvinfer1::Weights>* nid2weights,
+    std::unordered_map<uint32_t, nvinfer1::ITensor*>* nid2tensor,
+    std::unordered_map<uint32_t, nvinfer1::ILayer*>* nid2layer,
+    std::vector<uint32_t>* input_data_idx,
+    std::vector<std::string>* input_data_names,
+    std::vector<nvinfer1::Weights>* extra_weights) {
+  CHECK_EQ(nid2layer->count(nid), 0U);
+  CHECK_EQ(nodes[nid].inputs.size(), 1U);
+  nvinfer1::ITensor* data = GetTensorRTTensor(
+      nodes[nid].node_name, nodes, nodes[nid].inputs[0], data_entries,
+      input_nid2idx, *nid2layer, network, nid2tensor, input_data_idx, input_data_names);
+  nvinfer1::IShuffleLayer* flatten_layer = network->addShuffle(*data);
+  const nvinfer1::Dims data_dims = data->getDimensions();
+  CHECK_GE(data_dims.nbDims, 2);
+  const int batch_size = data_dims.d[0];
+  int trailing_dim_size = 1;
+  for (int i = 1; i < data_dims.nbDims; ++i) {
+    trailing_dim_size *= data_dims.d[i];
+  }
+  flatten_layer->setReshapeDimensions(nvinfer1::Dims2(batch_size, trailing_dim_size));
+  flatten_layer->setName(nodes[nid].node_name.c_str());
+  nid2layer->emplace(nid, flatten_layer);
+}
+
+void AddTranspose(
+    const uint32_t nid,
+    const std::vector<Subgraph::Node>& nodes,
+    const std::unordered_map<uint32_t, size_t>& input_nid2idx,
+    const std::vector<DLTensor>& data_entries,
+    nvinfer1::INetworkDefinition* network,
+    std::unordered_map<uint32_t, nvinfer1::Weights>* nid2weights,
+    std::unordered_map<uint32_t, nvinfer1::ITensor*>* nid2tensor,
+    std::unordered_map<uint32_t, nvinfer1::ILayer*>* nid2layer,
+    std::vector<uint32_t>* input_data_idx,
+    std::vector<std::string>* input_data_names,
+    std::vector<nvinfer1::Weights>* extra_weights) {
+  CHECK_EQ(nid2layer->count(nid), 0U);
+  CHECK_EQ(nodes[nid].inputs.size(), 1U);
+  nvinfer1::ITensor* data = GetTensorRTTensor(
+      nodes[nid].node_name, nodes, nodes[nid].inputs[0], data_entries,
+      input_nid2idx, *nid2layer, network, nid2tensor, input_data_idx, input_data_names);
+  nvinfer1::IShuffleLayer* transpose_layer = network->addShuffle(*data);
+  if (nodes[nid].attrs.count("axes")) {
+    std::vector<std::string> axes = TokenizeTuple(nodes[nid].attrs.at("axes"));
+    // max dims allowed in TensorRT
+    CHECK_LE(axes.size(), 8U);
+    if (!axes.empty()) {
+      nvinfer1::Permutation permutation;
+      for (size_t i = 0; i < axes.size(); ++i) {
+        permutation.order[i] = std::stoi(axes[i]);
+      }
+      transpose_layer->setFirstTranspose(permutation);
+    }
+  }
+  transpose_layer->setName(nodes[nid].node_name.c_str());
+  nid2layer->emplace(nid, transpose_layer);
+}
+
+void AddReshape(
+    const uint32_t nid,
+    const std::vector<Subgraph::Node>& nodes,
+    const std::unordered_map<uint32_t, size_t>& input_nid2idx,
+    const std::vector<DLTensor>& data_entries,
+    nvinfer1::INetworkDefinition* network,
+    std::unordered_map<uint32_t, nvinfer1::Weights>* nid2weights,
+    std::unordered_map<uint32_t, nvinfer1::ITensor*>* nid2tensor,
+    std::unordered_map<uint32_t, nvinfer1::ILayer*>* nid2layer,
+    std::vector<uint32_t>* input_data_idx,
+    std::vector<std::string>* input_data_names,
+    std::vector<nvinfer1::Weights>* extra_weights) {
+  CHECK_EQ(nid2layer->count(nid), 0U);
+  CHECK_EQ(nodes[nid].inputs.size(), 1U);
+  nvinfer1::ITensor* data = GetTensorRTTensor(
+      nodes[nid].node_name, nodes, nodes[nid].inputs[0], data_entries,
+      input_nid2idx, *nid2layer, network, nid2tensor, input_data_idx, input_data_names);
+  nvinfer1::IShuffleLayer* reshape_layer = network->addShuffle(*data);
+  CHECK(nodes[nid].attrs.count("shape"));
+  std::vector<std::string> shape = TokenizeTuple(nodes[nid].attrs.at("shape"));
+  // max ndim allowed in TensorRT
+  CHECK_LE(shape.size(), 8U);
+  nvinfer1::Dims dims;
+  dims.nbDims = shape.size();
+  for (size_t i = 0; i < shape.size(); ++i) {
+    dims.d[i] = std::stoi(shape[i]);
+    // TODO(junwu): Support -4, -3, -2
+    CHECK_GE(dims.d[i], -1) << "Only support >= -1 for reshape for now";
+  }
+  reshape_layer->setReshapeDimensions(dims);
+  reshape_layer->setName(nodes[nid].node_name.c_str());
+  nid2layer->emplace(nid, reshape_layer);
+}
+
 namespace {
 using AddTensorRTLayer = std::function<void(
     const uint32_t nid,
@@ -805,7 +908,10 @@ static const std::unordered_map<std::string, AddTensorRTLayer> add_trt_layer_fun
      {"softmax", AddSoftmax},
      {"concatenate", AddConcatenate},
      {"conv2d_transpose", AddDeconvolution},
-     {"slice_like", AddSliceLike}
+     {"slice_like", AddSliceLike},
+     {"flatten", AddFlatten},
+     {"transpose", AddTranspose},
+     {"reshape", AddReshape}
     };
 }  // namespace
 

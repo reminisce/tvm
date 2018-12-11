@@ -29,7 +29,10 @@ _OP_WHITELIST_DICT = {"tensorrt": ['conv2d',
                                    'softmax',
                                    'concatenate',
                                    'conv2d_transpose',
-                                   'slice_like']}
+                                   'slice_like',
+                                   'flatten',
+                                   'transpose',
+                                   'reshape']}
 
 
 def _partition(graph, subgraph_backend, op_names=None):

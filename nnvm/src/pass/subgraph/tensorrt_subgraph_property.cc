@@ -86,6 +86,15 @@ bool IsTensorRTCompatibleOp(const std::unordered_set<std::string>& op_names,
     if (std::stoi(axes_str.substr(pos+1)) != 3) {
       return false;
     }
+  } else if (op_name == "reshape") {
+    CHECK_EQ(params.count("shape"), 1U);
+    const auto shape = TokenizeTuple(params.at("shape"));
+    for (const auto& dim_size : shape) {
+      // TODO(junwu): remove this and support -4, -3, -2
+      if (std::stoi(dim_size) < -1) {
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -100,20 +109,18 @@ class TensorRTOpSelector: public SubgraphSelector {
     : op_names_(op_names) {}
 
   bool Select(const nnvm::Node &seed_node) {
-    return !seed_node.is_variable() &&
-        (IsTensorRTCompatibleOp(op_names_, seed_node) || seed_node.op()->name == "flatten");
+    return !seed_node.is_variable() && IsTensorRTCompatibleOp(op_names_, seed_node);
   }
 
   bool SelectInput(const nnvm::Node &cur_node, const nnvm::Node &input_node) {
-    return !input_node.is_variable() && (IsTensorRTCompatibleOp(op_names_, input_node)
-        || (cur_node.op()->name == "dense" && input_node.op()->name == "flatten"));
+    return !input_node.is_variable() && IsTensorRTCompatibleOp(op_names_, input_node);
   }
 
   bool SelectOutput(const nnvm::Node &cur_node, const nnvm::Node &output_node) {
-    return !output_node.is_variable()
-        && (IsTensorRTCompatibleOp(op_names_, output_node) || output_node.op()->name == "flatten");
+    return !output_node.is_variable() && IsTensorRTCompatibleOp(op_names_, output_node);
   }
 
+#if 0
   // flatten op nodes may have been selected. It can only be placed before dense op. If not,
   // remove them from the candidates.
   // Ref: https://docs.nvidia.com/deeplearning/sdk/tensorrt-developer-guide/index.html#layers
@@ -147,6 +154,7 @@ class TensorRTOpSelector: public SubgraphSelector {
     }
     return ret;
   }
+#endif
 
  private:
   const std::unordered_set<std::string>& op_names_;
@@ -164,7 +172,8 @@ class TensorRTSubgraphProperty: public SubgraphProperty {
     nnvm::NodePtr n = nnvm::Node::Create();
     n->attrs.op = Op::Get("_tensorrt_subgraph_op");
     n->attrs.name = "_tensorrt_subgraph_op" + std::to_string(subgraph_id);
-    nnvm::Symbol new_sym = RemoveFlattenOpNodes(sym);
+    // nnvm::Symbol new_sym = RemoveFlattenOpNodes(sym);
+    nnvm::Symbol new_sym = sym;
     n->attrs.subgraphs.push_back(std::make_shared<nnvm::Symbol>(new_sym));
     return n;
   }
@@ -172,7 +181,7 @@ class TensorRTSubgraphProperty: public SubgraphProperty {
     return std::make_shared<TensorRTOpSelector>(
         this->GetAttr<std::unordered_set<std::string>>("op_names"));
   }
-
+#if 0
  private:
   nnvm::Symbol RemoveFlattenOpNodes(nnvm::Symbol sym) const {
     std::stack<nnvm::Node*> node_stack;
@@ -200,6 +209,7 @@ class TensorRTSubgraphProperty: public SubgraphProperty {
     }
     return sym;
   }
+#endif
 };
 
 NNVM_REGISTER_SUBGRAPH_PROPERTY(tensorrt, TensorRTSubgraphProperty);
