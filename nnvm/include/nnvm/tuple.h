@@ -319,7 +319,7 @@ class Tuple {
   static const int kStackCache = 4;
   /*! \brief number of dimension of the tuple */
   //uint32_t ndim_{0};
-  int ndim_{-1};
+  int ndim_{0};
   /*! \brief number of cells allocated in data_heap_ */
   int num_heap_allocated_{0};
   /*! \brief in stack space used to store shape when it is small */
@@ -351,7 +351,9 @@ class Tuple {
 class TShape : public Tuple<dim_t> {
  public:
   /*! \brief default constructor */
-  TShape() = default;
+  TShape() {
+    this->SetDim(-1);
+  }
   /*!
    * constructor to construct a shape with all 1.
    * \param ndim the number of dimension
@@ -359,6 +361,7 @@ class TShape : public Tuple<dim_t> {
   inline TShape(int ndim) {  // NOLINT(*)
     this->SetDim(ndim);
     if (ndim > 0) {
+      // TODO(junwu): change 1 to -1
       std::fill_n(begin(), ndim, 1);
     }
   }
