@@ -36,14 +36,20 @@ class Tuple {
   Tuple() = default;
   /*! \brief destructor */
   inline ~Tuple() {
-    delete [] data_heap_;
+    if (data_heap_ != nullptr) {
+      delete[] data_heap_;
+    }
   }
   /*!
    * \brief copy constructor from another tuple
    * \param s the source tuple
    */
   inline Tuple(const Tuple<ValueType>& s) {
-    this->assign(s.begin(), s.end());
+    if (s.ndim() == -1) {
+      this->SetDim(-1);
+    } else {
+      this->assign(s.begin(), s.end());
+    }
   }
   /*!
    * \brief constructor from initializer list
@@ -88,7 +94,10 @@ class Tuple {
   inline void assign(RandomAccessIterator begin,
                      RandomAccessIterator end) {
     this->SetDim(end - begin);
-    std::copy(begin, end, this->begin());
+    CHECK_GE(ndim(), 0);
+    if (ndim() > 0) {
+      std::copy(begin, end, this->begin());
+    }
   }
   /*!
    * \brief Swap current object with other
@@ -106,7 +115,11 @@ class Tuple {
    * \return reference of self
    */
   inline Tuple<ValueType>& operator=(const Tuple<ValueType>& src) {
-    this->assign(src.begin(), src.end());
+    if (src.ndim() == -1) {
+      this->SetDim(-1);
+    } else {
+      this->assign(src.begin(), src.end());
+    }
     return *this;
   }
   /*!
@@ -133,6 +146,7 @@ class Tuple {
    */
   inline bool operator==(const Tuple<ValueType> &s) const {
     if (ndim_ != s.ndim_) return false;
+    if (ndim() == -1) return true;
     return std::equal(begin(), end(), s.begin());
   }
   /*!
@@ -159,7 +173,8 @@ class Tuple {
     return ndim_ <= kStackCache ? (data_stack_ + ndim_): (data_heap_ + ndim_);
   }
   /*! \return number of dimension of the tuple */
-  inline uint32_t ndim() const {
+  // inline uint32_t ndim() const {
+  inline int ndim() const {
     return ndim_;
   }
   /*!
@@ -168,6 +183,7 @@ class Tuple {
    * \return the corresponding dimension size
    */
   inline ValueType& operator[](size_t i) {
+    CHECK_GT(ndim(), 0);
     return begin()[i];
   }
   /*!
@@ -176,6 +192,7 @@ class Tuple {
    * \return the corresponding dimension size
    */
   inline const ValueType& operator[](size_t i) const {
+    CHECK_GT(ndim(), 0);
     return begin()[i];
   }
   /*!
@@ -202,6 +219,7 @@ class Tuple {
    * \return the ostream
    */
   friend std::ostream &operator<<(std::ostream &os, const Tuple<ValueType> &t) {
+    if (t.ndim() == -1) return os;
     os << '[';
     const ValueType* begin = t.begin();
     const ValueType* end = t.end();
@@ -298,22 +316,30 @@ class Tuple {
 
  protected:
   // stack cache size
-  static const uint32_t kStackCache = 4;
+  static const int kStackCache = 4;
   /*! \brief number of dimension of the tuple */
-  uint32_t ndim_{0};
+  //uint32_t ndim_{0};
+  int ndim_{-1};
   /*! \brief number of cells allocated in data_heap_ */
-  uint32_t num_heap_allocated_{0};
+  int num_heap_allocated_{0};
   /*! \brief in stack space used to store shape when it is small */
   ValueType data_stack_[kStackCache];
   /*! \brief space to store shape when dimension is big*/
   ValueType* data_heap_{nullptr};
   // internal function to change the dimension
-  inline void SetDim(uint32_t ndim) {
+  // inline void SetDim(uint32_t ndim) {
+  inline void SetDim(int ndim) {
     if (ndim > kStackCache &&
         ndim > num_heap_allocated_) {
-      delete [] data_heap_;
+      if (data_heap_ != nullptr) {
+        delete[] data_heap_;
+      }
       data_heap_ = new ValueType[ndim];
       num_heap_allocated_ = ndim;
+    } else if (ndim == -1 && data_heap_ != nullptr) {
+      delete [] data_heap_;
+      data_heap_ = nullptr;
+      num_heap_allocated_ = 0;
     }
     ndim_ = ndim;
   }
@@ -330,16 +356,22 @@ class TShape : public Tuple<dim_t> {
    * constructor to construct a shape with all 1.
    * \param ndim the number of dimension
    */
-  inline TShape(uint32_t ndim) {  // NOLINT(*)
+  inline TShape(int ndim) {  // NOLINT(*)
     this->SetDim(ndim);
-    std::fill_n(begin(), ndim, 1);
+    if (ndim > 0) {
+      std::fill_n(begin(), ndim, 1);
+    }
   }
   /*!
    * \brief copy constructor of TShape
    * \param s source shape.
    */
   inline TShape(const Tuple<dim_t>& s) { // NOLINT(*)
-    this->assign(s.begin(), s.end());
+    if (s.ndim() == -1) {
+      this->SetDim(-1);
+    } else {
+      this->assign(s.begin(), s.end());
+    }
   }
   /*!
    * \brief constructor from initializer list
@@ -372,7 +404,11 @@ class TShape : public Tuple<dim_t> {
    * \return self.
    */
   inline TShape& operator=(const Tuple<dim_t>& src) {
-    this->assign(src.begin(), src.end());
+    if (src.ndim() == -1) {
+      this->SetDim(-1);
+    } else {
+      this->assign(src.begin(), src.end());
+    }
     return *this;
   }
   /*!
@@ -386,6 +422,7 @@ class TShape : public Tuple<dim_t> {
   }
   /*! \return total number of elements in the shape */
   inline size_t Size() const {
+    if (this->ndim() == -1) return 0;
     dim_t size = 1;
     const dim_t* start = begin(), *fin = end();
     for (const dim_t* it = start; it != fin; ++it) {
@@ -399,6 +436,7 @@ class TShape : public Tuple<dim_t> {
    * \param dimend end dimension
    */
   inline size_t ProdShape(int dimstart, int dimend) const {
+    if (this->ndim() == -1) return 0;
     dim_t num = 1;
     const dim_t *d = this->data();
     for (int i = dimstart; i < dimend; ++i) {
@@ -442,7 +480,8 @@ class TShape : public Tuple<dim_t> {
    */
   template<int dim>
   inline mshadow::Shape<dim> get() const {
-    CHECK_EQ(dim, static_cast<int>(ndim()))
+    // CHECK_EQ(dim, static_cast<int>(ndim()))
+    CHECK_EQ(dim, ndim())
         << "dimension do not match target dimension " << dim << " vs " << ndim();
     const dim_t *d = this->data();
     mshadow::Shape<dim> s;
@@ -457,7 +496,10 @@ class TShape : public Tuple<dim_t> {
    */
   inline mshadow::Shape<2> FlatTo2D(void) const {
     mshadow::Shape<2> s;
-    if (ndim() == 0) return mshadow::Shape2(0, 0);
+    // TODO(junwu): verify correctness
+    CHECK_GE(ndim(), 0);
+    // if (ndim() == 0) return mshadow::Shape2(0, 0);
+    if (ndim() == 0) return mshadow::Shape2(1, 1);
     const dim_t *d = this->data();
     s.shape_[1] = d[ndim() - 1];
     dim_t ymax = 1;
@@ -476,7 +518,9 @@ class TShape : public Tuple<dim_t> {
   inline mshadow::Shape<3> FlatTo3D(size_t axis_begin, size_t axis_end) const {
     CHECK(axis_end >= axis_begin);
     mshadow::Shape<3> s;
-    if (ndim() == 0) return mshadow::Shape3(0, 0, 0);
+    // TODO(junwu): verify correctness
+    CHECK_GE(ndim(), 0);
+    if (ndim() == 0) return mshadow::Shape3(1, 1, 1);
     const dim_t *d = this->data();
     s.shape_[0] = 1;
     s.shape_[1] = 1;
@@ -609,7 +653,8 @@ struct hash<nnvm::TShape> {
   size_t operator()(const nnvm::TShape& val) const {
     std::hash<uint32_t> hash_uint;
     size_t res = hash_uint(val.ndim());
-    for (uint32_t i = 0; i < val.ndim(); ++i) {
+    // for (uint32_t i = 0; i < val.ndim(); ++i) {
+    for (int i = 0; i < val.ndim(); ++i) {
       res = dmlc::HashCombine(res, val[i]);
     }
     return res;
